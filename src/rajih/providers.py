@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Protocol
 
 
@@ -258,3 +261,114 @@ class DeepSeekChatClient:
         if not text:
             raise ProviderError("The DeepSeek response returned empty content; retry the request.")
         return _parse_json_object(str(text), schema)
+
+
+@dataclass(slots=True)
+class OpenRouterChatClient:
+    api_key: str
+    model: str
+    base_url: str = "https://openrouter.ai/api/v1"
+    timeout: float = 120.0
+    transport: Transport = _http_transport
+
+    def generate_json(self, *, instructions: str, input_text: str, schema_name: str, schema: dict[str, Any], web_search: bool = False) -> dict[str, Any]:
+        if not self.api_key:
+            raise ProviderError("OPENROUTER_API_KEY is required for this provider.")
+        if not self.model:
+            raise ProviderError("A model identifier is required.")
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": input_text},
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": schema,
+                },
+            },
+            "provider": {"require_parameters": True},
+            "stream": False,
+        }
+        if web_search:
+            payload["plugins"] = [{"id": "web"}]
+        response = _request_json(
+            url=f"{self.base_url.rstrip('/')}/chat/completions",
+            payload=payload,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "X-OpenRouter-Title": "RAJIH Engine",
+            },
+            timeout=self.timeout,
+            transport=self.transport,
+        )
+        try:
+            text = response["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ProviderError("The OpenRouter response contained no message content.") from exc
+        if not text:
+            raise ProviderError("The OpenRouter response returned empty content; retry the request.")
+        return _parse_json_object(str(text), schema)
+
+
+ProcessRunner = Callable[..., subprocess.CompletedProcess[str]]
+
+
+@dataclass(slots=True)
+class CodexSubscriptionClient:
+    """Use the official Codex CLI and its saved ChatGPT authentication."""
+
+    model: str = "codex-default"
+    executable: str = "codex"
+    timeout: float = 600.0
+    runner: ProcessRunner = subprocess.run
+
+    def generate_json(self, *, instructions: str, input_text: str, schema_name: str, schema: dict[str, Any], web_search: bool = False) -> dict[str, Any]:
+        prompt = (
+            f"{instructions}\n\n"
+            "Complete only the requested reasoning task. Do not modify files or run commands. "
+            "Return only the JSON object required by the supplied output schema.\n\n"
+            f"Input:\n{input_text}"
+        )
+        try:
+            with tempfile.TemporaryDirectory(prefix="rajih-codex-") as temp_dir:
+                temp_path = Path(temp_dir)
+                schema_path = temp_path / f"{schema_name}.schema.json"
+                output_path = temp_path / "response.json"
+                schema_path.write_text(json.dumps(schema), encoding="utf-8")
+
+                command = [self.executable]
+                if web_search:
+                    command.append("--search")
+                command.extend(["exec", "--ephemeral", "--sandbox", "read-only"])
+                if self.model and self.model != "codex-default":
+                    command.extend(["--model", self.model])
+                command.extend([
+                    "--output-schema",
+                    str(schema_path),
+                    "--output-last-message",
+                    str(output_path),
+                    "-",
+                ])
+                result = self.runner(
+                    command,
+                    cwd=Path.cwd(),
+                    capture_output=True,
+                    text=True,
+                    input=prompt,
+                    timeout=self.timeout,
+                    check=False,
+                )
+                if result.returncode != 0:
+                    detail = (result.stderr or result.stdout or "unknown Codex CLI error").strip()
+                    raise ProviderError(f"Codex CLI failed: {detail[:500]}")
+                if not output_path.exists():
+                    raise ProviderError("Codex CLI did not write its final response.")
+                return _parse_json_object(output_path.read_text(encoding="utf-8"), schema)
+        except FileNotFoundError as exc:
+            raise ProviderError("Codex CLI was not found. Install it, then run 'codex login'.") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ProviderError(f"Codex CLI exceeded the {self.timeout:g}-second timeout.") from exc

@@ -11,6 +11,18 @@ Official references: [Codex CLI](https://developers.openai.com/codex/cli), [AGEN
 3. Use `/status` to confirm the repository root and `/permissions` to select boundaries appropriate for your data.
 4. Ask Codex to summarize the active `AGENTS.md` instructions. The repository also includes project-scoped `scout`, `ideator`, `critic`, and `jury` custom agents.
 
+## Automated subscription mode
+
+RAJIH can also invoke Codex non-interactively without an OpenAI API key:
+
+```powershell
+codex login
+codex login status
+rajih run examples/brief.json --provider codex
+```
+
+This reuses the official Codex CLI's saved ChatGPT authentication and consumes your plan's Codex allowance rather than OpenAI API billing. Subscription limits still apply. RAJIH launches ephemeral, read-only executions and never reads or exports the cached credential.
+
 ## Start a run
 
 ```powershell

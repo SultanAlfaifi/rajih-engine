@@ -4,12 +4,13 @@
 
 RAJIH Engine provides a small, inspectable runtime for turning a challenge brief into independent candidate ideas, structured criticism, evidence annotations, and a recorded decision. It is designed to work with OpenCode, Codex, or Claude Code without hard-coding a model provider.
 
-> **Status:** Engineering alpha `v0.2.0`. The local runtime, four direct provider adapters, command-line interface, persistence layer, routing logic, and automated tests work. Live API calls require the user's own account, key, model access, and budget.
+> **Status:** Engineering alpha `v0.3.0`. The local runtime, Codex subscription adapter, five direct API adapters, command-line interface, persistence layer, routing logic, and automated tests work. Provider usage remains subject to the selected service's account limits and terms.
 
 ## What is included
 
 - A Python command-line application.
-- Direct standalone execution through OpenAI, Anthropic, Gemini, or DeepSeek.
+- Official ChatGPT subscription execution through the locally authenticated Codex CLI.
+- Direct API execution through OpenRouter, OpenAI, Anthropic, Gemini, or DeepSeek.
 - Durable JSON and Markdown run records.
 - An uncertainty-aware routing layer.
 - Isolated ideator, scout, critic, and jury agent definitions.
@@ -61,7 +62,32 @@ The demo writes its output under `.rajih/runs/<run-id>/`:
 
 The demo does not call an LLM or verify external claims.
 
-## Standalone model run
+## Run with your ChatGPT subscription
+
+This is the default and does not require an OpenAI API key. RAJIH invokes the official Codex CLI, which reuses its saved ChatGPT login:
+
+```powershell
+codex login
+codex login status
+rajih run examples/brief.json --provider codex
+```
+
+This uses your Codex/ChatGPT subscription allowance rather than OpenAI API billing. It is not unlimited: plan availability, usage limits, and reset windows still apply. RAJIH never reads or copies the cached Codex credential. Each role runs through an ephemeral, read-only `codex exec` process with a required JSON output schema.
+
+Add `--web-search` for Scout web research, or `--model "MODEL_ID"` only when you intentionally want to override your configured Codex model.
+
+## Run with OpenRouter
+
+OpenRouter is a separate API service and requires its own key. Its usage is not included with a ChatGPT subscription and may incur OpenRouter charges:
+
+```powershell
+$env:OPENROUTER_API_KEY = Read-Host "OpenRouter API key"
+rajih run examples/brief.json --provider openrouter --model "OPENROUTER_MODEL_ID"
+```
+
+Choose an OpenRouter model that supports structured outputs. `--web-search` requests OpenRouter's web plugin and can add usage or cost.
+
+## Other direct API providers
 
 Set your API key in the current process without saving it in the repository:
 
@@ -70,7 +96,7 @@ $env:OPENAI_API_KEY = Read-Host "OpenAI API key"
 rajih run examples/brief.json --provider openai --model "YOUR_MODEL_ID" --web-search
 ```
 
-`--provider` accepts `openai`, `anthropic`, `gemini`, or `deepseek`. The `--web-search` option is currently available only with OpenAI; without it, RAJIH skips external evidence collection. OpenAI and Gemini requests use `store: false`; provider account and retention settings still apply.
+`--provider` accepts `codex`, `openrouter`, `openai`, `anthropic`, `gemini`, or `deepseek`. Web search is supported for Scout with Codex, OpenRouter, and OpenAI. Without it, RAJIH skips external evidence collection. OpenAI and Gemini requests use `store: false`; provider account and retention settings still apply.
 
 One provider can run every role, or roles can use different providers:
 
@@ -101,7 +127,7 @@ See [Direct provider usage](docs/guides/direct-providers.md). OpenCode, Codex, a
 ```text
 rajih init <brief.json>       Create a new run
 rajih demo <brief.json>       Run the deterministic offline demo
-rajih run <brief.json>        Run directly through the OpenAI API
+rajih run <brief.json>        Run through Codex subscription or a selected API
 rajih status [run-id]         List runs or inspect one run
 rajih choose <run-id> <idea>  Resolve a close-result human gate
 rajih validate <run-id>       Validate state invariants
@@ -109,7 +135,7 @@ rajih validate <run-id>       Validate state invariants
 
 ## Model policy
 
-RAJIH does not pin model names. Direct adapters require `--model`, a role-specific model flag, or the selected provider's model environment variable. OpenCode, Codex, and Claude Code use the model configured in their runtime. Every role's provider and model identifier are saved with direct runs.
+RAJIH does not pin model names. The `codex` provider can inherit the model configured in Codex; direct API adapters require `--model`, a role-specific model flag, or the selected provider's model environment variable. OpenCode and Claude Code use the model configured in their runtime. Every role's provider and model identifier are saved with direct runs.
 
 Additional provider integrations can implement the `AgentBackend` protocol in `src/rajih/engine.py`. Keep credentials in environment variables and never commit `.env` or `.rajih/`.
 

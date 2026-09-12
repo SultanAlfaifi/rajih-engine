@@ -16,11 +16,16 @@ from .providers import (
     DeepSeekChatClient,
     GeminiGenerateContentClient,
     JsonGenerationClient,
+    CodexSubscriptionClient,
     OpenAIResponsesClient,
+    OpenRouterChatClient,
     ProviderError,
 )
 from .router import UncertaintyRouter
 from .store import RunStore
+
+
+PROVIDERS = ("codex", "openrouter", "openai", "anthropic", "gemini", "deepseek")
 
 
 def slug(value: str) -> str:
@@ -41,11 +46,11 @@ def parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="Run RAJIH directly with a model provider")
     run.add_argument("brief", type=Path)
     run.add_argument("--title")
-    run.add_argument("--provider", choices=("openai", "anthropic", "gemini", "deepseek"), default="openai")
+    run.add_argument("--provider", choices=PROVIDERS, default="codex")
     run.add_argument("--model")
     run.add_argument("--base-url")
     for role in ("scout", "ideator", "critic", "jury"):
-        run.add_argument(f"--{role}-provider", choices=("openai", "anthropic", "gemini", "deepseek"))
+        run.add_argument(f"--{role}-provider", choices=PROVIDERS)
         run.add_argument(f"--{role}-model")
     run.add_argument("--web-search", action="store_true", help="Allow the Scout to use provider web search")
     run.add_argument("--ideas-per-persona", type=int, default=1)
@@ -81,7 +86,12 @@ def validate_state(state: RunState) -> list[str]:
 
 
 def build_provider_client(provider: str, model: str | None, base_url: str | None, timeout: float) -> JsonGenerationClient:
+    if provider == "codex":
+        if base_url:
+            raise ValueError("--base-url is not supported by the codex provider")
+        return CodexSubscriptionClient(model=model or "codex-default", timeout=timeout)
     settings = {
+        "openrouter": (OpenRouterChatClient, "OPENROUTER_API_KEY", "OPENROUTER_MODEL"),
         "openai": (OpenAIResponsesClient, "OPENAI_API_KEY", "OPENAI_MODEL"),
         "anthropic": (AnthropicMessagesClient, "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"),
         "gemini": (GeminiGenerateContentClient, "GEMINI_API_KEY", "GEMINI_MODEL"),
@@ -119,8 +129,8 @@ def main(argv: list[str] | None = None) -> int:
                     explicit_model = getattr(args, f"{role}_model")
                     inherited_model = args.model if provider == args.provider else None
                     role_settings[role] = (provider, explicit_model or inherited_model)
-                if args.web_search and role_settings["scout"][0] != "openai":
-                    raise ValueError("--web-search is currently supported only by the openai adapter")
+                if args.web_search and role_settings["scout"][0] not in {"codex", "openrouter", "openai"}:
+                    raise ValueError("--web-search requires the codex, openrouter, or openai adapter for Scout")
                 clients = {
                     role: build_provider_client(provider, model, args.base_url if provider == args.provider else None, args.timeout)
                     for role, (provider, model) in role_settings.items()

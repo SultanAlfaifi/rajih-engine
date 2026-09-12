@@ -1,4 +1,5 @@
 import json
+import subprocess
 import unittest
 
 from rajih.engine import RajihEngine
@@ -6,9 +7,11 @@ from rajih.live_backend import RoutedProviderBackend
 from rajih.models import Evidence, Idea, RunState, Stage
 from rajih.providers import (
     AnthropicMessagesClient,
+    CodexSubscriptionClient,
     DeepSeekChatClient,
     GeminiGenerateContentClient,
     OpenAIResponsesClient,
+    OpenRouterChatClient,
     ProviderError,
 )
 from rajih.router import UncertaintyRouter
@@ -182,6 +185,83 @@ class ResponsesClientTests(unittest.TestCase):
         self.assertEqual(result, {"ok": True})
         self.assertEqual(captured["url"], "https://api.deepseek.com/chat/completions")
         self.assertEqual(captured["payload"]["response_format"], {"type": "json_object"})
+
+    def test_openrouter_uses_structured_outputs_and_optional_web_plugin(self):
+        captured = {}
+
+        def transport(request, timeout):
+            captured["url"] = request.full_url
+            captured["headers"] = dict(request.header_items())
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            return {"choices": [{"message": {"content": '{"ok":true}'}}]}
+
+        client = OpenRouterChatClient("test-key", "test-model", transport=transport)
+        result = client.generate_json(
+            instructions="Return JSON",
+            input_text="hello",
+            schema_name="test",
+            schema=self.SCHEMA,
+            web_search=True,
+        )
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(captured["url"], "https://openrouter.ai/api/v1/chat/completions")
+        self.assertEqual(captured["payload"]["response_format"]["type"], "json_schema")
+        self.assertEqual(captured["payload"]["provider"], {"require_parameters": True})
+        self.assertEqual(captured["payload"]["plugins"], [{"id": "web"}])
+
+    def test_openrouter_requires_its_own_api_key(self):
+        client = OpenRouterChatClient("", "test-model")
+        with self.assertRaises(ProviderError):
+            client.generate_json(
+                instructions="Return JSON", input_text="hello", schema_name="test", schema=self.SCHEMA
+            )
+
+    def test_codex_uses_ephemeral_read_only_exec_and_saved_login(self):
+        captured = {}
+
+        def runner(command, **kwargs):
+            captured["command"] = command
+            captured["kwargs"] = kwargs
+            output_path = command[command.index("--output-last-message") + 1]
+            with open(output_path, "w", encoding="utf-8") as output:
+                output.write('{"ok":true}')
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        client = CodexSubscriptionClient(runner=runner)
+        result = client.generate_json(
+            instructions="Return JSON",
+            input_text="hello",
+            schema_name="test",
+            schema=self.SCHEMA,
+            web_search=True,
+        )
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(captured["command"][:3], ["codex", "--search", "exec"])
+        self.assertIn("--ephemeral", captured["command"])
+        self.assertEqual(
+            captured["command"][captured["command"].index("--sandbox") + 1], "read-only"
+        )
+        self.assertNotIn("--model", captured["command"])
+        self.assertEqual(captured["command"][-1], "-")
+        self.assertIn("Input:\nhello", captured["kwargs"]["input"])
+        self.assertFalse(captured["kwargs"]["check"])
+
+    def test_codex_can_override_the_subscription_model(self):
+        captured = {}
+
+        def runner(command, **kwargs):
+            captured["command"] = command
+            output_path = command[command.index("--output-last-message") + 1]
+            with open(output_path, "w", encoding="utf-8") as output:
+                output.write('{"ok":true}')
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        client = CodexSubscriptionClient(model="gpt-test", runner=runner)
+        client.generate_json(
+            instructions="Return JSON", input_text="hello", schema_name="test", schema=self.SCHEMA
+        )
+        model_index = captured["command"].index("--model")
+        self.assertEqual(captured["command"][model_index + 1], "gpt-test")
 
     def test_local_schema_validation_rejects_wrong_types(self):
         def transport(request, timeout):
