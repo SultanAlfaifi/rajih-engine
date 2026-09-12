@@ -43,7 +43,10 @@ class RunStore:
         for idea in state.ideas:
             ideas.extend([f"## {idea.idea_id}: {idea.title}", "", idea.solution, ""])
         decisions = ["# Decisions", ""] + [f"- {d.get('decision')}: {d.get('reason')}" for d in state.decisions]
-        progress = ["# Progress", "", f"Current stage: **{state.stage.value}**", ""] + [f"- [x] {step}" for step in state.completed]
+        progress = ["# Progress", "", f"Current stage: **{state.stage.value}**", ""]
+        if state.runtime:
+            progress.extend(["## Runtime", "", *[f"- **{key}:** {value}" for key, value in state.runtime.items()], ""])
+        progress.extend(f"- [x] {step}" for step in state.completed)
         for filename, lines in {"brief.md": brief, "ideas.md": ideas, "decisions.md": decisions, "progress.md": progress}.items():
             (target / filename).write_text("\n".join(lines) + "\n", encoding="utf-8")
 

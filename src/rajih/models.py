@@ -55,6 +55,7 @@ class RunState:
     ideas: list[Idea] = field(default_factory=list)
     decisions: list[dict[str, Any]] = field(default_factory=list)
     metrics: dict[str, float] = field(default_factory=dict)
+    runtime: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

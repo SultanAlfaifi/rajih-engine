@@ -2,7 +2,7 @@
 
 ## Scope
 
-RAJIH is an inspectable orchestration runtime. It persists workflow state while an external coding-agent environment supplies web, file, model, and human-interaction capabilities.
+RAJIH is an inspectable orchestration runtime. It can call OpenAI, Anthropic, Gemini, or DeepSeek directly, or use an external coding-agent environment for model and tool capabilities. Workflow state remains local under `.rajih/`.
 
 ```text
 Human
@@ -17,6 +17,8 @@ Orchestrator ──────── State store / audit log
 ```
 
 Specialists do not communicate directly. Their outputs return to the orchestrator through explicit contracts. This hub-and-spoke topology makes provenance, routing, and termination easier to audit.
+
+In direct mode, Scout, Ideator, Critic, and Jury may each use a different provider and model. The orchestrator remains deterministic application code and records the role-to-model mapping with the run.
 
 ## State machine
 
@@ -55,4 +57,4 @@ These are conservative defaults, not universal thresholds. Operators should tune
 
 ## Extension boundary
 
-Implement provider integrations behind the `AgentBackend` protocol. Keep provider-specific credentials and configuration outside the repository. Persist the actual provider and model snapshot in each run so results remain interpretable when models change.
+Direct provider integrations sit behind the `AgentBackend` protocol. Keep provider-specific credentials and configuration outside the repository. Persist the actual provider and model snapshot in each run so results remain interpretable when models change.
