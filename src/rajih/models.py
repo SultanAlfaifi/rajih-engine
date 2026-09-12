@@ -25,6 +25,8 @@ class Evidence:
     source: str
     source_type: str = "other"
     confidence: float = 0.5
+    relationship: str = "context"
+    accessed_at: str = ""
 
 
 @dataclass(slots=True)
@@ -52,10 +54,13 @@ class RunState:
     stage: Stage = Stage.UNDERSTAND
     completed: list[str] = field(default_factory=list)
     unknowns: list[str] = field(default_factory=list)
+    context_evidence: list[Evidence] = field(default_factory=list)
     ideas: list[Idea] = field(default_factory=list)
+    finalist_ids: list[str] = field(default_factory=list)
     decisions: list[dict[str, Any]] = field(default_factory=list)
     metrics: dict[str, float] = field(default_factory=dict)
     runtime: dict[str, Any] = field(default_factory=dict)
+    route_log: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

@@ -28,6 +28,10 @@ class RunStore:
             raw["evidence"] = [Evidence(**item) for item in raw.get("evidence", [])]
             ideas.append(Idea(**raw))
         data["ideas"] = ideas
+        data["context_evidence"] = [Evidence(**item) for item in data.get("context_evidence", [])]
+        if "finalist_ids" not in data:
+            revised = [idea.idea_id for idea in ideas if idea.parent_id]
+            data["finalist_ids"] = revised or [idea.idea_id for idea in ideas]
         data["stage"] = Stage(data["stage"])
         return RunState(**data)
 
@@ -41,7 +45,14 @@ class RunStore:
         brief = [f"# {state.title}", "", *[f"- **{k}:** {v}" for k, v in state.brief.items()]]
         ideas = ["# Ideas", ""]
         for idea in state.ideas:
-            ideas.extend([f"## {idea.idea_id}: {idea.title}", "", idea.solution, ""])
+            lineage = f"Parent: `{idea.parent_id}`" if idea.parent_id else "Original candidate"
+            ideas.extend([f"## {idea.idea_id}: {idea.title}", "", lineage, "", idea.solution, ""])
+            if idea.risks:
+                ideas.extend(["### Risks", "", *[f"- {risk}" for risk in idea.risks], ""])
+            if idea.evidence:
+                ideas.extend(["### Candidate evidence", "", *[f"- [{item.relationship}] {item.claim} — {item.source} (accessed {item.accessed_at})" for item in idea.evidence], ""])
+            if idea.scores:
+                ideas.extend(["### Scores", "", *[f"- {key}: {value}" for key, value in idea.scores.items()], ""])
         decisions = ["# Decisions", ""] + [f"- {d.get('decision')}: {d.get('reason')}" for d in state.decisions]
         progress = ["# Progress", "", f"Current stage: **{state.stage.value}**", ""]
         if state.runtime:

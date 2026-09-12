@@ -32,12 +32,23 @@ class UncertaintyRouter:
         return missing / len(self.REQUIRED)
 
     def evidence_coverage(self, state: RunState) -> float:
-        if not state.ideas:
+        candidates = [idea for idea in state.ideas if idea.idea_id in state.finalist_ids]
+        if not candidates:
+            candidates = state.ideas
+        if not candidates:
             return 0.0
-        return sum(bool(idea.evidence) for idea in state.ideas) / len(state.ideas)
+        def usable(item) -> bool:
+            external = item.source.startswith(("http://", "https://")) and bool(item.accessed_at)
+            synthetic_demo = state.runtime.get("mode") == "demo" and item.source_type == "demo"
+            return external or synthetic_demo
+
+        return sum(any(usable(item) for item in idea.evidence) for idea in candidates) / len(candidates)
 
     def winner_margin(self, state: RunState) -> float:
-        ranked = sorted((idea.mean_score for idea in state.ideas), reverse=True)
+        candidates = [idea for idea in state.ideas if idea.idea_id in state.finalist_ids]
+        if not candidates:
+            candidates = state.ideas
+        ranked = sorted((idea.mean_score for idea in candidates), reverse=True)
         return ranked[0] - ranked[1] if len(ranked) >= 2 else 0.0
 
     def decide(self, state: RunState) -> RouteDecision:
@@ -47,10 +58,14 @@ class UncertaintyRouter:
                 return RouteDecision(Stage.CLARIFY_BRIEF, "human", "The challenge itself is missing.", True)
             if uncertainty > 0:
                 return RouteDecision(Stage.RESEARCH, "scout", "Required public context is incomplete.")
-            return RouteDecision(Stage.DIVERGE, "ideator", "The minimum brief is complete.")
+            return RouteDecision(Stage.RESEARCH, "scout", "The minimum brief is complete; collect shared context.")
         if state.stage == Stage.RESEARCH:
-            return RouteDecision(Stage.CLARIFY_BRIEF, "human", "Only personal or team-specific gaps should be asked.", True)
+            if self.intake_uncertainty(state) > 0:
+                return RouteDecision(Stage.CLARIFY_BRIEF, "human", "Private or team-specific brief gaps remain.", True)
+            return RouteDecision(Stage.DIVERGE, "ideator", "The brief and shared context are ready.")
         if state.stage == Stage.CLARIFY_BRIEF:
+            if self.intake_uncertainty(state) > 0:
+                return RouteDecision(Stage.CLARIFY_BRIEF, "human", "Required brief fields are still missing.", True)
             return RouteDecision(Stage.DIVERGE, "ideator", "High-value gaps have been resolved.")
         if state.stage == Stage.DIVERGE:
             return RouteDecision(Stage.CRITIQUE, "critic", "Independent candidate ideas are available.")
@@ -61,8 +76,10 @@ class UncertaintyRouter:
         if state.stage == Stage.VERIFY:
             return RouteDecision(Stage.CONVERGE, "jury", "Evidence-backed scoring can begin.")
         if state.stage == Stage.CONVERGE:
+            if self.evidence_coverage(state) < 1.0:
+                return RouteDecision(Stage.HUMAN_GATE, "human", "One or more finalists lack candidate-specific evidence.", True)
             uncertain = self.winner_margin(state) < self.winner_margin_threshold
-            return RouteDecision(Stage.HUMAN_GATE if uncertain else Stage.DECIDE, "human" if uncertain else "orchestrator", "Finalist scores are close." if uncertain else "A stable leader exists.", uncertain)
+            return RouteDecision(Stage.HUMAN_GATE if uncertain else Stage.DECIDE, "human" if uncertain else "orchestrator", "Finalist scores are close." if uncertain else "An evidence-informed scoring leader exists.", uncertain)
         if state.stage == Stage.HUMAN_GATE:
             return RouteDecision(Stage.DECIDE, "orchestrator", "The human preference has resolved the close decision.")
         if state.stage == Stage.DECIDE:

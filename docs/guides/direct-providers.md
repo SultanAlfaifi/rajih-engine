@@ -43,6 +43,8 @@ rajih run examples/brief.json --provider codex --web-search
 
 Each specialist call launches a separate Codex execution, so a complete run consumes multiple subscription requests.
 
+With the default three candidates, a full run without web search makes 12 model calls: ideation, critique, refinement, and jury scoring for each candidate. Enabling web search adds shared-context research and candidate-specific verification calls. If candidate evidence is unavailable, RAJIH requires a human choice instead of treating the Jury score as an evidence-backed automatic decision.
+
 ## OpenRouter
 
 ```powershell

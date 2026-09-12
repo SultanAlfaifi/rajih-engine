@@ -3,7 +3,7 @@ import subprocess
 import unittest
 
 from rajih.engine import RajihEngine
-from rajih.live_backend import RoutedProviderBackend
+from rajih.live_backend import ProviderBackend, RoutedProviderBackend
 from rajih.models import Evidence, Idea, RunState, Stage
 from rajih.providers import (
     AnthropicMessagesClient,
@@ -27,6 +27,9 @@ BRIEF = {
 
 
 class FakeBackend:
+    def __init__(self):
+        self.scored_evidence_counts = []
+
     def research(self, state):
         return [Evidence("Public claim", "https://example.org", "web", 0.8)]
 
@@ -40,7 +43,14 @@ class FakeBackend:
     def critique(self, state, idea):
         return ["Test adoption assumptions", "Validate the prototype constraint"]
 
+    def refine(self, state, idea):
+        return Idea("", f"{idea.title} revised", idea.problem, f"{idea.solution} revised", idea.persona, parent_id=idea.idea_id, risks=list(idea.risks))
+
+    def verify(self, state, idea):
+        return [Evidence(f"Evidence for {idea.idea_id}", f"https://example.org/{idea.idea_id}", "web", 0.8, "supports", "2026-09-12T00:00:00+00:00")]
+
     def score(self, state, idea):
+        self.scored_evidence_counts.append(len(idea.evidence))
         number = int(idea.idea_id.split("-")[1])
         return {"impact": 5.0 - number * 0.5, "feasibility": 5.0 - number * 0.5}
 
@@ -48,11 +58,30 @@ class FakeBackend:
 class LiveEngineTests(unittest.TestCase):
     def test_live_run_persists_evidence_scores_and_decision(self):
         state = RunState("live-1", "Live", BRIEF)
-        result = RajihEngine(FakeBackend(), UncertaintyRouter(winner_margin=0.35)).run_live(state)
+        backend = FakeBackend()
+        result = RajihEngine(backend, UncertaintyRouter(winner_margin=0.35)).run_live(state)
         self.assertEqual(result.stage, Stage.DONE)
-        self.assertEqual(len(result.ideas), 3)
-        self.assertTrue(all(idea.evidence and idea.risks and idea.scores for idea in result.ideas))
-        self.assertEqual(result.decisions[0]["decision"], "Select IDEA-01")
+        self.assertEqual(len(result.ideas), 6)
+        finalists = [idea for idea in result.ideas if idea.idea_id in result.finalist_ids]
+        self.assertTrue(all(idea.parent_id and idea.evidence and idea.risks and idea.scores for idea in finalists))
+        self.assertEqual(backend.scored_evidence_counts, [1, 1, 1])
+        self.assertEqual(result.decisions[0]["decision"], "Select IDEA-04")
+        self.assertEqual(
+            [entry["to"] for entry in result.route_log],
+            ["research", "diverge", "critique", "refine", "verify", "converge", "decide", "done"],
+        )
+
+    def test_missing_candidate_evidence_forces_human_gate(self):
+        class NoEvidenceBackend(FakeBackend):
+            def verify(self, state, idea):
+                return []
+
+        result = RajihEngine(NoEvidenceBackend(), UncertaintyRouter()).run_live(
+            RunState("live-no-evidence", "Live", BRIEF)
+        )
+        self.assertEqual(result.stage, Stage.HUMAN_GATE)
+        self.assertEqual(result.metrics["candidate_evidence_coverage"], 0.0)
+        self.assertIn("lack candidate-specific evidence", result.route_log[-1]["reason"])
 
     def test_routed_backend_dispatches_each_role_independently(self):
         calls = []
@@ -73,6 +102,14 @@ class LiveEngineTests(unittest.TestCase):
                 calls.append(self.role)
                 return []
 
+            def refine(self, state, idea):
+                calls.append(self.role)
+                return idea
+
+            def verify(self, state, idea):
+                calls.append(self.role)
+                return []
+
             def score(self, state, idea):
                 calls.append(self.role)
                 return {}
@@ -88,8 +125,27 @@ class LiveEngineTests(unittest.TestCase):
         routed.research(state)
         routed.ideate(state, "grounded", 1)
         routed.critique(state, idea)
+        routed.refine(state, idea)
+        routed.verify(state, idea)
         routed.score(state, idea)
-        self.assertEqual(calls, ["scout", "ideator", "critic", "jury"])
+        self.assertEqual(calls, ["scout", "ideator", "critic", "ideator", "scout", "jury"])
+
+    def test_jury_receives_candidate_specific_evidence(self):
+        captured = {}
+
+        class Client:
+            model = "fake"
+
+            def generate_json(self, **kwargs):
+                captured.update(kwargs)
+                return {"scores": {"impact": 4.0, "feasibility": 3.0}}
+
+        idea = Idea("IDEA-02", "title", "problem", "solution", "grounded")
+        idea.evidence.append(Evidence("Candidate claim", "https://example.org/candidate", "web", 0.8, "supports", "2026-09-12T00:00:00+00:00"))
+        scores = ProviderBackend(Client()).score(RunState("jury", "Jury", BRIEF), idea)
+        payload = json.loads(captured["input_text"])
+        self.assertEqual(scores, {"impact": 4.0, "feasibility": 3.0})
+        self.assertEqual(payload["candidate"]["evidence"][0]["claim"], "Candidate claim")
 
 
 class ResponsesClientTests(unittest.TestCase):

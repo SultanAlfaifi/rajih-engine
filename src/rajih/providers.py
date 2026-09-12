@@ -77,6 +77,8 @@ def _parse_json_object(text: str, schema: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_value(value: Any, schema: dict[str, Any], path: str) -> None:
+    if "enum" in schema and value not in schema["enum"]:
+        raise ProviderError(f"{path} must be one of: {', '.join(map(str, schema['enum']))}.")
     expected = schema.get("type")
     if expected == "object":
         if not isinstance(value, dict):

@@ -4,7 +4,7 @@
 
 RAJIH Engine provides a small, inspectable runtime for turning a challenge brief into independent candidate ideas, structured criticism, evidence annotations, and a recorded decision. It is designed to work with OpenCode, Codex, or Claude Code without hard-coding a model provider.
 
-> **Status:** Engineering alpha `v0.3.0`. The local runtime, Codex subscription adapter, five direct API adapters, command-line interface, persistence layer, routing logic, and automated tests work. Provider usage remains subject to the selected service's account limits and terms.
+> **Status:** Engineering alpha `v0.4.0`. The Full Evidence Loop, Codex subscription adapter, five direct API adapters, command-line interface, persistence layer, routing logic, and automated tests work. Provider usage remains subject to the selected service's account limits and terms.
 
 ## What is included
 
@@ -13,6 +13,8 @@ RAJIH Engine provides a small, inspectable runtime for turning a challenge brief
 - Direct API execution through OpenRouter, OpenAI, Anthropic, Gemini, or DeepSeek.
 - Durable JSON and Markdown run records.
 - An uncertainty-aware routing layer.
+- Traceable idea revisions linked with `parent_id`.
+- Candidate-specific verification before evidence-informed jury scoring.
 - Isolated ideator, scout, critic, and jury agent definitions.
 - Setup guides for OpenCode, Codex, and Claude Code.
 - Automated tests and GitHub Actions CI.
@@ -28,15 +30,17 @@ flowchart TB
     O --> S["Scout<br/>Public Evidence"]
     O --> I["Independent Ideators<br/>Grounded · Transformational · Demo-first"]
     O --> C["Critic<br/>Independent Challenge"]
+    O --> R["Refiner<br/>Traceable Revisions"]
     O --> J["Product Jury<br/>Rubric Scoring"]
     S --> O
     I --> O
     C --> O
+    R --> O
     J --> O
     O <--> M[("Persistent State<br/>Evidence · Ideas · Progress · Decisions")]
 ```
 
-Specialists return bounded outputs to the orchestrator. First-round ideators remain isolated from one another, and the orchestrator is the only component allowed to merge shared state.
+Specialists return bounded outputs to the orchestrator. First-round ideators remain isolated from one another, and the orchestrator is the only component allowed to merge shared state. The live pipeline now executes `UNDERSTAND → RESEARCH → DIVERGE → CRITIQUE → REFINE → VERIFY → CONVERGE → HUMAN_GATE/DECIDE → DONE`; incomplete briefs stop at `CLARIFY_BRIEF`.
 
 See [Architecture](docs/architecture.md) and [Diagrams](docs/diagrams/README.md).
 
@@ -96,7 +100,7 @@ $env:OPENAI_API_KEY = Read-Host "OpenAI API key"
 rajih run examples/brief.json --provider openai --model "YOUR_MODEL_ID" --web-search
 ```
 
-`--provider` accepts `codex`, `openrouter`, `openai`, `anthropic`, `gemini`, or `deepseek`. Web search is supported for Scout with Codex, OpenRouter, and OpenAI. Without it, RAJIH skips external evidence collection. OpenAI and Gemini requests use `store: false`; provider account and retention settings still apply.
+`--provider` accepts `codex`, `openrouter`, `openai`, `anthropic`, `gemini`, or `deepseek`. Web search is supported for Scout with Codex, OpenRouter, and OpenAI. Without it, RAJIH skips external evidence collection and routes the final choice to the human because candidate evidence is incomplete. OpenAI and Gemini requests use `store: false`; provider account and retention settings still apply.
 
 One provider can run every role, or roles can use different providers:
 
@@ -108,7 +112,7 @@ rajih run examples/brief.json `
   --scout-provider gemini --scout-model "GEMINI_MODEL_ID"
 ```
 
-The command runs three isolated ideation perspectives, critiques every candidate, scores the finalists, and saves the complete run. If the top candidates are close, it stops at `human_gate`:
+The command runs three isolated ideation perspectives, critiques and refines each candidate, verifies each revision separately, then gives the Jury the candidate's evidence. It stops at `human_gate` when finalists are close or candidate-specific evidence is missing:
 
 ```powershell
 rajih status <run-id>

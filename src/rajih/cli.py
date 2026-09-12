@@ -75,6 +75,16 @@ def load_brief(path: Path) -> dict:
 
 def validate_state(state: RunState) -> list[str]:
     errors = []
+
+    def validate_evidence(evidence, owner: str) -> None:
+        if not evidence.source:
+            errors.append(f"{owner} evidence must retain a source")
+        if evidence.source_type != "demo" and not evidence.source.startswith(("http://", "https://")):
+            errors.append(f"{owner} external evidence must use an HTTP(S) source URL")
+        if evidence.source.startswith(("http://", "https://")) and not evidence.accessed_at:
+            errors.append(f"{owner} external evidence must retain access metadata")
+        if not 0 <= evidence.confidence <= 1:
+            errors.append(f"{owner} evidence confidence must be between 0 and 1")
     if not state.brief.get("challenge"):
         errors.append("brief.challenge is required")
     ids = [idea.idea_id for idea in state.ideas]
@@ -82,6 +92,54 @@ def validate_state(state: RunState) -> list[str]:
         errors.append("idea IDs must be unique")
     if state.decisions and not state.ideas:
         errors.append("a decision cannot exist without candidate ideas")
+    id_set = set(ids)
+    for evidence in state.context_evidence:
+        validate_evidence(evidence, "context")
+    for idea in state.ideas:
+        if idea.parent_id and idea.parent_id not in id_set:
+            errors.append(f"{idea.idea_id} references an unknown parent")
+        if idea.parent_id == idea.idea_id:
+            errors.append(f"{idea.idea_id} cannot be its own parent")
+        for evidence in idea.evidence:
+            validate_evidence(evidence, idea.idea_id)
+        seen = {idea.idea_id}
+        parent_id = idea.parent_id
+        while parent_id:
+            if parent_id in seen:
+                errors.append(f"{idea.idea_id} contains a lineage cycle")
+                break
+            seen.add(parent_id)
+            parent = next((candidate for candidate in state.ideas if candidate.idea_id == parent_id), None)
+            parent_id = parent.parent_id if parent else None
+    if len(state.finalist_ids) != len(set(state.finalist_ids)):
+        errors.append("finalist IDs must be unique")
+    unknown_finalists = set(state.finalist_ids) - id_set
+    if unknown_finalists:
+        errors.append(f"unknown finalist IDs: {', '.join(sorted(unknown_finalists))}")
+    scored_stages = {Stage.HUMAN_GATE, Stage.DECIDE, Stage.DONE}
+    if state.stage in scored_stages:
+        finalists = [idea for idea in state.ideas if idea.idea_id in state.finalist_ids]
+        if not finalists:
+            errors.append("a converged run must retain finalists")
+        if any(not idea.scores for idea in finalists):
+            errors.append("every finalist must have jury scores after convergence")
+        if state.runtime.get("pipeline_version") == "0.4" and any(not idea.parent_id for idea in finalists):
+            errors.append("every v0.4 finalist must be a traceable revision")
+    if state.stage == Stage.DONE and not state.decisions:
+        errors.append("a completed run must retain a final decision")
+    for decision in state.decisions:
+        selected = decision.get("idea_id")
+        if selected and selected not in id_set:
+            errors.append(f"decision references an unknown idea: {selected}")
+        if selected and state.finalist_ids and selected not in state.finalist_ids:
+            errors.append(f"decision references a non-finalist idea: {selected}")
+    if state.runtime.get("pipeline_version") == "0.4" and state.route_log:
+        if state.route_log[0].get("from") != Stage.UNDERSTAND.value:
+            errors.append("v0.4 route log must begin at understand")
+        for previous, current in zip(state.route_log, state.route_log[1:]):
+            if previous.get("to") != current.get("from"):
+                errors.append("route log transitions must be contiguous")
+                break
     return errors
 
 
@@ -137,11 +195,14 @@ def main(argv: list[str] | None = None) -> int:
                 }
                 state.runtime = {
                     "mode": "direct",
+                    "pipeline_version": "0.4",
                     "roles": {
                         role: {"provider": role_settings[role][0], "model": client.model}
                         for role, client in clients.items()
                     },
                     "web_search": args.web_search,
+                    "ideas_per_persona": max(1, args.ideas_per_persona),
+                    "timeout_seconds": args.timeout,
                 }
                 store.save(state)
                 try:
@@ -185,11 +246,14 @@ def main(argv: list[str] | None = None) -> int:
             state = store.load(args.run_id)
             if state.stage.value != "human_gate":
                 raise ValueError("choose is only valid when the run is waiting at the human gate")
-            selected = next((idea for idea in state.ideas if idea.idea_id == args.idea_id), None)
+            selected = next((idea for idea in state.ideas if idea.idea_id == args.idea_id and idea.idea_id in state.finalist_ids), None)
             if selected is None:
-                raise ValueError(f"unknown idea ID: {args.idea_id}")
-            state.decisions.append({"decision": f"Select {selected.idea_id}", "reason": args.reason})
+                raise ValueError(f"unknown finalist ID: {args.idea_id}")
+            state.route_log.append({"from": "human_gate", "to": "decide", "actor": "human", "reason": args.reason, "needs_human": False})
+            state.stage = Stage.DECIDE
+            state.decisions.append({"idea_id": selected.idea_id, "decision": f"Select {selected.idea_id}", "reason": args.reason})
             state.unknowns = [item for item in state.unknowns if "rajih choose" not in item]
+            state.route_log.append({"from": "decide", "to": "done", "actor": "orchestrator", "reason": "The human-selected decision was persisted.", "needs_human": False})
             state.stage = Stage.DONE
             state.completed.append("human decision")
             path = store.save(state)

@@ -2,7 +2,7 @@
 
 ## Scope
 
-RAJIH is an inspectable orchestration runtime. It can call OpenAI, Anthropic, Gemini, or DeepSeek directly, or use an external coding-agent environment for model and tool capabilities. Workflow state remains local under `.rajih/`.
+RAJIH is an inspectable orchestration runtime. It can use a ChatGPT-authenticated Codex CLI, call OpenRouter, OpenAI, Anthropic, Gemini, or DeepSeek directly, or use an external coding-agent environment. Workflow state remains local under `.rajih/`.
 
 ```text
 Human
@@ -24,7 +24,7 @@ In direct mode, Scout, Ideator, Critic, and Jury may each use a different provid
 
 | State | Exit evidence | Next actor |
 |---|---|---|
-| UNDERSTAND | challenge, track, criteria, team, constraints classified | Scout or Ideator |
+| UNDERSTAND | challenge, track, criteria, team, constraints classified | Scout or Human |
 | RESEARCH | official rules and material public gaps searched | Human only for private gaps |
 | CLARIFY_BRIEF | one high-value private or team-specific gap resolved | Ideators |
 | DIVERGE | independent candidates exist from configured personas | Critic |
@@ -41,7 +41,7 @@ In direct mode, Scout, Ideator, Critic, and Jury may each use a different provid
 Reference implementation uses three inspectable signals:
 
 1. Intake missingness: missing required brief fields divided by five.
-2. Evidence coverage: candidates with at least one evidence record divided by candidate count.
+2. Evidence coverage: finalists with at least one sourced, access-stamped candidate record divided by finalist count.
 3. Winner margin: difference between the two highest mean rubric scores.
 
 These are conservative defaults, not universal thresholds. Operators should tune them for their workflow and record any changes in the run log.
@@ -52,7 +52,7 @@ These are conservative defaults, not universal thresholds. Operators should tune
 - No final decision exists without at least one candidate.
 - No novelty claim is `verified` solely from model judgment.
 - External evidence retains its source and access metadata.
-- The configured budget and evidence snapshot are recorded for each run.
+- Runtime configuration, routing decisions, and evidence snapshots are recorded for each run.
 - Demo results remain labeled synthetic.
 
 ## Extension boundary

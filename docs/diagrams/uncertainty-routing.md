@@ -2,45 +2,27 @@
 
 This policy decides whether to collect public evidence, ask the human, expand diversity, critique, evaluate, decide, or stop inconclusively.
 
-Implementation status: `v0.1.0` implements intake missingness, evidence coverage, and finalist-margin routing. Evaluation-disagreement and budget-reserve enforcement remain proposed extensions.
+Implementation status: `v0.4.0` implements intake missingness, candidate-specific evidence coverage, finalist-margin routing, and an auditable route log. Evaluation-disagreement and budget-reserve enforcement are not implemented.
 
 ```mermaid
 flowchart TB
-    START["Current Decision Point"] --> SIGNALS["Estimate Observable Routing Signals<br/>Brief completeness · Evidence coverage · Evaluation disagreement<br/>Quality risk · Remaining budget"]
-
-    SIGNALS --> A{"Missing public information?"}
-    A -->|Yes| SCOUT["Call Scout"]
-    SCOUT --> UPDATE["Update State & Audit Log"]
-    UPDATE --> SIGNALS
-
-    A -->|No| B{"Missing private or team information?"}
-    B -->|Yes| HUMAN["Ask One High-value Human Question"]
-    HUMAN --> UPDATE
-
-    B -->|No| C{"Need more independent diversity?"}
-    C -->|Yes| IDEATORS["Run Isolated Ideators"]
-    IDEATORS --> MERGE["Merge Candidates Centrally"]
-    MERGE --> UPDATE
-
-    C -->|No| D{"Evidence coverage below τe?"}
-    D -->|Yes| VERIFY["Scout Prior-art Verification"]
-    VERIFY --> UPDATE
-
-    D -->|No| E{"Evaluation disagreement or quality risk above τu?"}
-    E -->|Yes| CRITIC["Call Independent Critic"]
-    CRITIC --> UPDATE
-
-    E -->|No| F{"Budget above reserve τb?"}
-    F -->|Yes| JURY["Product Jury Scores Anonymized Finalists"]
-    JURY --> MARGIN{"Finalist score margin Δ below τm?"}
-    MARGIN -->|Yes| GATE["Human Decision Gate"]
-    GATE --> DECIDE["Record Final Decision<br/>Evidence · Rationale · Cost"]
-    MARGIN -->|No| DECIDE
-
-    F -->|No| SUPPORT{"Any sufficiently supported candidate?"}
-    SUPPORT -->|Yes| EARLY["Early Supported Decision"]
-    EARLY --> DECIDE
-    SUPPORT -->|No| INCONCLUSIVE["Stop Inconclusive<br/>Insufficient Evidence or Budget"]
+    START["UNDERSTAND"] --> CHALLENGE{"Challenge present?"}
+    CHALLENGE -->|No| CLARIFY["CLARIFY_BRIEF<br/>Human input required"]
+    CHALLENGE -->|Yes| RESEARCH["RESEARCH<br/>Shared public context"]
+    RESEARCH --> COMPLETE{"Required brief fields complete?"}
+    COMPLETE -->|No| CLARIFY
+    COMPLETE -->|Yes| DIVERGE["DIVERGE<br/>Isolated ideators"]
+    DIVERGE --> CRITIQUE["CRITIQUE<br/>Candidate-specific risks"]
+    CRITIQUE --> REFINE["REFINE<br/>Revision + parent_id"]
+    REFINE --> VERIFY["VERIFY<br/>Candidate-specific evidence"]
+    VERIFY --> JURY["CONVERGE<br/>Evidence-informed Jury"]
+    JURY --> COVERAGE{"Evidence coverage complete?"}
+    COVERAGE -->|No| GATE["HUMAN_GATE"]
+    COVERAGE -->|Yes| MARGIN{"Winner margin below threshold?"}
+    MARGIN -->|Yes| GATE
+    MARGIN -->|No| DECIDE["DECIDE<br/>Persist winner + rationale"]
+    GATE --> DECIDE
+    DECIDE --> DONE["DONE"]
 ```
 
-The symbols `τe`, `τu`, `τb`, and `τm` are tunable thresholds. Record selected values with each run when these extensions are implemented.
+The finalist margin threshold is configurable in the router. Evidence coverage is deliberately conservative: every finalist must have at least one candidate-specific evidence record for automatic selection. These are routing heuristics, not calibrated statistical uncertainty.

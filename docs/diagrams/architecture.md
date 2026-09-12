@@ -14,6 +14,7 @@ flowchart TB
         I2["Transformational Ideator"]
         I3["Demo-first Ideator"]
         C["Critic<br/>Independent Challenge"]
+        R["Refiner<br/>Traceable Revision"]
         J["Product Jury<br/>Rubric Scoring"]
     end
 
@@ -27,15 +28,18 @@ flowchart TB
     I3 -->|"Candidate"| O
     O -->|"Targeted review"| C
     C -->|"Falsifiable risks"| O
-    O -->|"Anonymized finalists"| J
-    J -->|"Scores · uncertainty · ties"| O
+    O -->|"Candidate + risks"| R
+    R -->|"Revision + parent_id"| O
+    O -->|"Candidate-specific verification"| S
+    O -->|"Anonymized finalist + evidence"| J
+    J -->|"Rubric scores"| O
 
     subgraph MEM["Persistent Run State"]
         T[("Task Ledger")]
         P[("Progress Ledger")]
         E[("Evidence Store")]
         L[("Idea Lineage")]
-        D[("Decision & Cost Log")]
+        D[("Decision & Runtime Log")]
     end
 
     O <--> T
