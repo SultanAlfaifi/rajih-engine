@@ -1,0 +1,10 @@
+{
+  "title": "Campus Food Waste Challenge",
+  "challenge": "Reduce food waste at university events",
+  "tracks": ["sustainability"],
+  "criteria": ["innovation", "impact", "feasibility", "presentation"],
+  "team": ["software engineering", "product design"],
+  "constraints": ["48-hour prototype", "no custom hardware"],
+  "language": "English"
+}
+
