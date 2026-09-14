@@ -2,6 +2,8 @@
 
 **Evidence-grounded multi-agent ideation for hackathon teams.**
 
+![RAJIH Engine — independent ideation, structured critique, and evidence-informed selection](docs/assets/rajih-project-card.png)
+
 RAJIH Engine provides a small, inspectable runtime for turning a challenge brief into independent candidate ideas, structured criticism, evidence annotations, and a recorded decision. It is designed to work with OpenCode, Codex, or Claude Code without hard-coding a model provider.
 
 > **Status:** Engineering alpha `v0.4.1`. The Full Evidence Loop, Codex subscription adapter, five direct API adapters, command-line interface, persistence layer, routing logic, and automated tests work. Provider usage remains subject to the selected service's account limits and terms.
