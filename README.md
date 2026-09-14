@@ -4,7 +4,7 @@
 
 RAJIH Engine provides a small, inspectable runtime for turning a challenge brief into independent candidate ideas, structured criticism, evidence annotations, and a recorded decision. It is designed to work with OpenCode, Codex, or Claude Code without hard-coding a model provider.
 
-> **Status:** Engineering alpha `v0.4.0`. The Full Evidence Loop, Codex subscription adapter, five direct API adapters, command-line interface, persistence layer, routing logic, and automated tests work. Provider usage remains subject to the selected service's account limits and terms.
+> **Status:** Engineering alpha `v0.4.1`. The Full Evidence Loop, Codex subscription adapter, five direct API adapters, command-line interface, persistence layer, routing logic, and automated tests work. Provider usage remains subject to the selected service's account limits and terms.
 
 ## What is included
 
@@ -43,6 +43,14 @@ flowchart TB
 Specialists return bounded outputs to the orchestrator. First-round ideators remain isolated from one another, and the orchestrator is the only component allowed to merge shared state. The live pipeline now executes `UNDERSTAND → RESEARCH → DIVERGE → CRITIQUE → REFINE → VERIFY → CONVERGE → HUMAN_GATE/DECIDE → DONE`; incomplete briefs stop at `CLARIFY_BRIEF`.
 
 See [Architecture](docs/architecture.md) and [Diagrams](docs/diagrams/README.md).
+
+## Research foundations
+
+RAJIH's architecture is informed by published and preprint work on central orchestration, structured multi-agent ideation, sparse routing, failure analysis, idea lineage, human steering, debate dynamics, novelty-judgment limits, and the broader LLM-assisted ideation lifecycle.
+
+The sources support individual design choices; they do not independently validate the complete RAJIH system or prove that it outperforms other workflows for hackathons. See the full [research foundations and architecture-to-source map](docs/research-foundations.md).
+
+Private hypotheses, experiment designs, benchmark data, unpublished results, and paper drafts remain outside this public engineering repository.
 
 ## Quick start
 
